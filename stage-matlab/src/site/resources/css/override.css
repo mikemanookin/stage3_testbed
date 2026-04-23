@@ -1,0 +1,24 @@
+.content_container {
+  padding: 0 0 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+.container-fluid {
+  padding-right: 0;
+  padding-left: 0;
+}
+.code_responsive { 
+  margin-bottom: 10px;
+}
+div.alert {
+  padding: 15px 15px 15px;
+}
+blockquote {
+  font-size: 13px;
+}
+a.anchor {
+  display: block;
+  position: relative;
+  top: -100px;
+  visibility: hidden;
+}

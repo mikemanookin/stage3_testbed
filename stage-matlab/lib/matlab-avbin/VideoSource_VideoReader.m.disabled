@@ -1,0 +1,95 @@
+% VideoSource backed by MATLAB's VideoReader. Preserved as a
+% reference implementation for the cross-platform migration
+% (TASK-005). Currently DISABLED — the active VideoSource.m is
+% AVbin-backed because VideoReader hangs on the MP4 files used
+% by this rig (MATLAB's Media Foundation codec layer gets stuck
+% inside the VideoReader constructor — symptom: Stage MATLAB
+% session locks up, no frames flip, FrameTracker photodiode
+% never toggles, DAQ stalls waiting for trigger).
+%
+% To re-enable for investigation, rename this file to
+% VideoSource.m (replacing the AVbin-backed version). Move the
+% AVbin-backed copy to VideoSource_AVbin.m.disabled first.
+%
+% Investigation checklist for anyone picking this back up:
+%   - Confirm which MATLAB version + MP4 codec combination hangs
+%   - Test with a freshly-transcoded "fast-start" MP4 using:
+%       ffmpeg -i input.mp4 -movflags +faststart -c copy output.mp4
+%   - Test `VideoReader(path)` at the Stage MATLAB prompt BEFORE
+%     running a protocol — if that hangs, the issue is pure
+%     VideoReader, not Stage-interaction
+%   - If VideoReader works at the prompt but hangs inside
+%     Movie.init, the interaction is with the GLFW / OpenGL
+%     context on Stage's thread
+%
+% Once a root cause is identified, this file replaces the AVbin
+% version and Phase 5 of TASK-005 proceeds.
+
+classdef VideoSource < handle
+    properties (SetAccess = private)
+        size
+        duration
+    end
+    properties (Access = private)
+        reader
+        buffer
+    end
+    methods
+        function obj = VideoSource(filename)
+            obj.reader = VideoReader(filename);
+            obj.size = [obj.reader.Width, obj.reader.Height];
+            obj.duration = obj.reader.Duration * 1e6;
+            obj.buffer = VideoBuffer();
+        end
+        function delete(obj)
+            if ~isempty(obj.reader)
+                try %#ok<TRYNC>
+                    delete(obj.reader);
+                end
+            end
+        end
+        function seek(obj, timestamp)
+            obj.reader.CurrentTime = timestamp / 1e6;
+            obj.buffer.clear();
+        end
+        function preload(obj)
+            while hasFrame(obj.reader)
+                ts = obj.reader.CurrentTime * 1e6;
+                img = readFrame(obj.reader);
+                obj.buffer.add(img, ts);
+            end
+        end
+        function [img, timestamp] = getImage(obj, time)
+            [img, timestamp] = obj.nextImage();
+            while ~isempty(img) && timestamp < time
+                [img, timestamp] = obj.nextImage();
+            end
+        end
+        function [img, timestamp] = nextImage(obj)
+            if obj.buffer.count > 0
+                [img, timestamp] = obj.buffer.remove();
+                return;
+            end
+            if ~hasFrame(obj.reader)
+                img = [];
+                timestamp = [];
+                return;
+            end
+            timestamp = obj.reader.CurrentTime * 1e6;
+            img = readFrame(obj.reader);
+        end
+        function timestamp = nextTimestamp(obj)
+            if obj.buffer.count > 0
+                [~, timestamp] = obj.buffer.peek();
+                return;
+            end
+            if ~hasFrame(obj.reader)
+                timestamp = [];
+                return;
+            end
+            timestamp = obj.reader.CurrentTime * 1e6;
+            img = readFrame(obj.reader);
+            obj.buffer.add(img, timestamp);
+        end
+    end
+end
