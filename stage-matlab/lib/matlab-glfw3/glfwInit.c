@@ -3,18 +3,17 @@
 #include "glfw_mac_dispatch.h"
 
 /*
- * mexAtExit callback. glfwTerminate must also run on macOS main thread
- * (it tears down the same Cocoa/TSM objects glfwInit created), so we
- * route it through the same dispatcher. See glfw_mac_dispatch.h.
+ * mexAtExit callback. glfwTerminate must also run on macOS main
+ * thread (it tears down the same Cocoa objects glfwInit created).
  */
 void cleanup(void)
 {
-    GLFW_RUN_ON_MAIN_VOID(glfwTerminate());
+    GLFW_ON_MAIN({ glfwTerminate(); });
 }
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
-    int result = GL_FALSE;
+    GLFW_BLOCK int result = GL_FALSE;
 
     if (nrhs != 0)
     {
@@ -23,10 +22,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     }
     mexAtExit(cleanup);
 
-    /* On macOS, run glfwInit on the main thread via dispatch_sync;
-       otherwise the Cocoa TSM assertion at dispatch_assert_queue
-       fires and crashes MATLAB. See spec/TASKS.md § TASK-008. */
-    GLFW_RUN_ON_MAIN_INT(result, glfwInit());
+    /* On macOS, run glfwInit on the main thread. Cocoa/TSM APIs
+       called by glfwInit assert they're on the main dispatch queue
+       under macOS 15+. See spec/TASKS.md § TASK-008. */
+    GLFW_ON_MAIN({ result = glfwInit(); });
 
     if (result == GL_FALSE)
     {

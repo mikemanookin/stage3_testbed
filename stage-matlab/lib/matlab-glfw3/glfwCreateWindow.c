@@ -1,6 +1,7 @@
 #include <mex.h>
 #include "GLFW/glfw3.h"
 #include <stdint.h>
+#include "glfw_mac_dispatch.h"
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
@@ -10,7 +11,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     char *title;
     GLFWmonitor *monitor;
     GLFWwindow *share;
-    GLFWwindow *window;
+    GLFW_BLOCK GLFWwindow *window = NULL;
     mxArray *windowAddr;
     
     if (nrhs != 5)
@@ -38,7 +39,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
         share = (GLFWwindow *)*((uint64_t *)mxGetData(prhs[4]));
     }
     
-    window = glfwCreateWindow(width, height, title, monitor, share);
+    GLFW_ON_MAIN({ window = glfwCreateWindow(width, height, title, monitor, share); });
     
     windowAddr = mxCreateNumericMatrix(1, 1, mxUINT64_CLASS, mxREAL);
     *((uint64_t *)mxGetData(windowAddr)) = (uint64_t)window;

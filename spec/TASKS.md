@@ -342,8 +342,8 @@ TASK-002 measures the monitor's refresh rate by driving 120 empty flips at start
 ## TASK-008 — `glfwInit` crashes MATLAB on macOS 15+ (main-thread assertion)
 
 **Spec:** [decisions/0002-cross-platform-direction.md](decisions/0002-cross-platform-direction.md)
-**Status:** Open — known limitation, blocks TASK-005 Phase 4 for macOS
-**Priority:** P2 (Linux is the primary cross-platform target; macOS revisit later)
+**Status:** Code complete — 2026-04-23; awaiting end-to-end on-rig validation
+**Priority:** P1 (upgraded from P2 on 2026-04-23 after a Mac-using collaborator needed Stage now)
 
 ### Problem
 
@@ -357,24 +357,23 @@ First observed 2026-04-23 on:
 
 Crash stack: `mexFunction` → `glfwInit` → `_glfwInitCocoa` → `updateUnicodeData` → `TSMGetInputSourceProperty` → `islGetInputSourceListWithAdditions` → `dispatch_assert_queue_fail`.
 
-### Options
+### Chosen approach: Option 1 — Main-thread dispatch via GCD
 
-**1. `glfwInit` MEX wrapper with main-thread dispatch** (preferred if feasible).
+Picked 2026-04-23 after a Mac researcher needed Stage. Options 2-4 below kept as fallbacks.
 
-Write a MEX that uses GCD to run `glfwInit` on the main queue:
+Implementation:
 
-```c
-#include <dispatch/dispatch.h>
-...
-__block int rc = 0;
-dispatch_sync(dispatch_get_main_queue(), ^{
-    rc = glfwInit();
-});
-```
+- **New header** `lib/matlab-glfw3/glfw_mac_dispatch.h` defines two macros:
+  - `GLFW_ON_MAIN({ ...stmt... })` — runs the braced statement on the macOS main thread via `dispatch_sync(dispatch_get_main_queue(), ...)`. Short-circuits to inline if `pthread_main_np()` reports we're already on the main thread (avoids self-deadlock). On non-Apple platforms the macro is a no-op wrapper.
+  - `GLFW_BLOCK` — expands to `__block` on clang and nothing on GCC/MSVC. Used to qualify variables that receive a value assigned inside `GLFW_ON_MAIN`.
 
-Caveat: `dispatch_sync` to the main queue from a non-main thread requires the main thread to be actively draining its queue via a run loop. MATLAB's main thread runs a Cocoa run loop in desktop mode, probably not in `-nodesktop` mode — needs verification. If the main thread isn't pumping, this deadlocks.
+- **Every MEX wrapper** in `lib/matlab-glfw3/*.c` (30 files) was updated to `#include "glfw_mac_dispatch.h"` and wrap every direct `glfw*()` call in `GLFW_ON_MAIN({ ... })`. Non-GLFW code (input parsing, output building, error reporting, callback bookkeeping) was left alone.
 
-Every other Cocoa-touching GLFW call (`glfwCreateWindow`, `glfwPollEvents`, etc.) likely needs the same dispatch treatment — not just `glfwInit`. That's 30+ MEX wrappers to rewrite.
+- **Tested 2026-04-23** on macOS 15.7.4 / Apple Silicon M4 / R2024b: `glfwInit()`, `glfwGetMonitors()`, `glfwTerminate()` called from the MCR interpreter thread no longer crash. The earlier `dispatch_assert_queue_fail` trace trap is gone because the Cocoa/TSM calls now run on the main thread via GCD.
+
+Caveat: the approach requires MATLAB's main thread to be actively draining its dispatch queue (i.e. a Cocoa `NSRunLoop` pumping the main queue). Regular MATLAB desktop mode satisfies this because the main thread hosts the MATLAB desktop UI. `matlab -batch` and possibly `matlab -nodesktop` may not — needs verification before ruling them in for Stage on macOS.
+
+### Fallback options (not pursued today)
 
 **2. Replace GLFW on macOS with Psychtoolbox's `Screen`**.
 
@@ -386,15 +385,22 @@ A C++ executable creates its own main thread and initializes GLFW on it. MATLAB 
 
 **4. Document as a permanent limitation on macOS, support only Linux cross-platform**.
 
-Research rigs overwhelmingly run Windows or Linux. If no macOS user needs Stage on their rig, accepting this limitation is cheap.
+Now not applicable since we actually have a Mac user.
 
 ### Acceptance criteria
 
-Depends on chosen option. Leave open; revisit once there's a user demanding macOS support.
+- [x] `glfwInit()` from MATLAB's MCR thread on macOS 15+ no longer crashes — 2026-04-23 ✅
+- [x] `glfwGetMonitors()` returns successfully — 2026-04-23 ✅
+- [x] `glfwTerminate()` returns successfully — 2026-04-23 ✅
+- [x] All 30 `matlab-glfw3/*.c` files updated to wrap GLFW calls via GLFW_ON_MAIN — 2026-04-23 ✅
+- [ ] After rebuild, `VerifyStage` passes all checks on macOS 15 / Apple Silicon — pending user rebuild
+- [ ] `StartStage` opens a real GLFW window on macOS and renders at least one frame
+- [ ] A basic stage demo (`stage.demos.expandingSpot` or similar) runs end-to-end
+- [ ] Verified behavior under `matlab -batch` mode — likely will NOT work; if it doesn't, document the limitation
 
-### Temporary workaround
+### Temporary workaround (obsolete)
 
-None that preserves functionality. `StartStage('legacy')` on macOS doesn't crash on launch (it defers `glfwInit` until the user clicks Start) but will crash at Start time for the same reason.
+No longer needed. Main-thread dispatch resolves the crash in the MATLAB desktop scenario.
 
 ---
 

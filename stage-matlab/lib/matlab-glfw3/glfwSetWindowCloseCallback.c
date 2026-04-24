@@ -2,6 +2,7 @@
 #include "GLFW/glfw3.h"
 #include <stdint.h>
 #include "uthash.h"
+#include "glfw_mac_dispatch.h"
 
 typedef struct
 {
@@ -65,5 +66,5 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
         mxFree(replaced);
     }
     
-    glfwSetWindowCloseCallback(cb->window, cbfun);
+    GLFW_ON_MAIN({ glfwSetWindowCloseCallback(cb->window, cbfun); });
 }

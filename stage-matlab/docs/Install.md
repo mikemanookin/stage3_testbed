@@ -420,22 +420,26 @@ computer   % 'MACA64' = ARM-native, 'MACI64' = Intel / Rosetta
 
 ### MATLAB crashes ("Trace trap") when `glfwInit()` is called on macOS 15+
 
-**Known limitation.** MATLAB on macOS runs user code on a worker thread (`MCR 0 interpreter thread`), not the process's main Cocoa thread. GLFW's macOS backend calls Apple's TSM (Text Services Manager) during `glfwInit`, and macOS 15 (Sequoia) enforces a hard main-thread-only assertion on those calls via `dispatch_assert_queue`. Result: the assertion fails, MATLAB dies with a Trace trap.
+**Fixed 2026-04-23 via TASK-008** — main-thread dispatch wrappers in every `lib/matlab-glfw3/*.c` file. Pull the latest source, rebuild, and run.
 
-This is not specific to Stage; any MATLAB code that calls `glfwInit` on macOS 15+ from the interpreter thread hits the same crash. It affects GLFW 3.4 and all prior 3.x versions.
+Background: MATLAB on macOS runs user code on a worker thread (`MCR 0 interpreter thread`), not the process's main Cocoa thread. GLFW's macOS backend calls Apple's TSM/HIToolbox/Cocoa APIs, and macOS 15 (Sequoia) enforces a hard main-thread-only assertion on those via `dispatch_assert_queue`. The crash showed up with a stack of `_glfwInitCocoa` → `updateUnicodeData` → `TSMGetInputSourceProperty` → `dispatch_assert_queue_fail`.
 
-**Symptoms**:
+The fix routes every GLFW call in the MATLAB MEX layer through `dispatch_sync(dispatch_get_main_queue(), ...)` via two helper macros in `lib/matlab-glfw3/glfw_mac_dispatch.h`:
 
-- `VerifyStage` dies during the GLFW init check.
-- Crash dump shows a stack with `_glfwInitCocoa` → `updateUnicodeData` → `TSMGetInputSourceProperty` → `dispatch_assert_queue_fail`.
+- `GLFW_ON_MAIN({ ...glfw calls... })` — runs the braced block on the main thread (or inline if already on main)
+- `GLFW_BLOCK` — a storage-class qualifier (`__block` on clang, empty elsewhere) for locals that receive return values from inside the dispatch
 
-**Workarounds**:
+**Requirement**: MATLAB's main thread must be actively draining its Cocoa event loop (a.k.a. the main dispatch queue). This is true in **regular MATLAB desktop mode** (the main thread hosts the MATLAB desktop UI, whose run loop pumps the main queue). It may NOT be true under `matlab -batch` or potentially `matlab -nodesktop` — if you hit a hang on `glfwInit` in those modes, fall back to desktop mode.
 
-- **Linux is fully supported** and is the recommended cross-platform target today.
-- On macOS, you can launch `StartStage('legacy')` to run the old Swing UI — the crash doesn't fire there because `glfwInit` isn't called until the Stage window is actually created. But the crash will still hit when you click Start.
-- A real fix requires either (i) a MEX wrapper that dispatches `glfwInit` to the main queue via `dispatch_sync(dispatch_get_main_queue(), ...)` — tracked as TASK-008, or (ii) replacing GLFW with Psychtoolbox's `Screen` on macOS — larger refactor.
+If you're on an older checkout and see this crash, `git pull` to get the fix (TASK-008 commits), then rebuild MEX files:
 
-See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for status.
+```
+cd lib/matlab-glfw3
+# In MATLAB:
+make(true)
+```
+
+See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for the full design rationale.
 
 ### `fatal error: 'AGL/agl.h' file not found` (MOGL build on macOS)
 

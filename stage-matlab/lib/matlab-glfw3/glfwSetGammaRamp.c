@@ -1,6 +1,7 @@
 #include <mex.h>
 #include "GLFW/glfw3.h"
 #include <stdint.h>
+#include "glfw_mac_dispatch.h"
 
 unsigned short* toUshortArray(mxArray *matrix)
 {
@@ -73,7 +74,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     ramp.blue = toUshortArray(blue);
     ramp.size = size;
     
-    glfwSetGammaRamp(monitor, &ramp);
+    GLFW_ON_MAIN({ glfwSetGammaRamp(monitor, &ramp); });
     
     mxFree(ramp.red);
     mxFree(ramp.green);

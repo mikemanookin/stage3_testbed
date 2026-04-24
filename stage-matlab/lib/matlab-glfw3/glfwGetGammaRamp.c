@@ -1,6 +1,7 @@
 #include <mex.h>
 #include "GLFW/glfw3.h"
 #include <stdint.h>
+#include "glfw_mac_dispatch.h"
 
 mxArray* toMatrix(unsigned short *array, unsigned int size)
 {
@@ -21,19 +22,19 @@ mxArray* toMatrix(unsigned short *array, unsigned int size)
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     GLFWmonitor *monitor;
-    const GLFWgammaramp *ramp;
+    GLFW_BLOCK const GLFWgammaramp *ramp = NULL;
     const char *fieldNames[] = {"red", "green", "blue", "size"};
     mxArray *rampStruct;
-    
+
     if (nrhs != 1)
     {
         mexErrMsgIdAndTxt("glfw:usage", "Usage: ramp = glfwGetGammaRamp(monitor)");
         return;
     }
-    
+
     monitor = (GLFWmonitor *)*((uint64_t *)mxGetData(prhs[0]));
-        
-    ramp = glfwGetGammaRamp(monitor);
+
+    GLFW_ON_MAIN({ ramp = glfwGetGammaRamp(monitor); });
     
     rampStruct = mxCreateStructMatrix(1, 1, sizeof(fieldNames) / sizeof(fieldNames[0]), fieldNames);
     mxSetField(rampStruct, 0, "red", toMatrix(ramp->red, ramp->size));

@@ -1,23 +1,24 @@
 #include <mex.h>
 #include "GLFW/glfw3.h"
 #include <stdint.h>
+#include "glfw_mac_dispatch.h"
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     GLFWmonitor *monitor;
-    const GLFWvidmode *mode;
+    GLFW_BLOCK const GLFWvidmode *mode = NULL;
     const char *fieldNames[] = {"width", "height", "redBits", "greenBits", "blueBits", "refreshRate"};
     mxArray *modeStruct;
-    
+
     if (nrhs != 1)
     {
         mexErrMsgIdAndTxt("glfw:usage", "Usage: mode = glfwGetVideoMode(monitor)");
         return;
     }
-    
+
     monitor = (GLFWmonitor *)*((uint64_t *)mxGetData(prhs[0]));
-        
-    mode = glfwGetVideoMode(monitor);
+
+    GLFW_ON_MAIN({ mode = glfwGetVideoMode(monitor); });
     
     modeStruct = mxCreateStructMatrix(1, 1, sizeof(fieldNames) / sizeof(fieldNames[0]), fieldNames);
     mxSetField(modeStruct, 0, "width", mxCreateDoubleScalar(mode->width));
