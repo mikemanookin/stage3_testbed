@@ -45,9 +45,29 @@ function make()
                 brewInclude = '/usr/local/include';
             end
 
+            % Clang 16+ (Xcode 15+) made -Wincompatible-function-pointer-types
+            % an error by default. MOGL's gl_manual.c passes typed
+            % callbacks to gluTessCallback, whose declared signature
+            % is the K&R-era `void (*)()` — the types are technically
+            % incompatible but runtime-safe, and Stage doesn't use
+            % tessellation at all. Demote the check to a warning so the
+            % build completes.
+            %
+            % Also silence the 90+ OpenGL-deprecated-on-10.9 warnings
+            % that clutter the output (-DGL_SILENCE_DEPRECATION is the
+            % compiler's own suggestion) and the tautological-pointer-
+            % compare warnings caused by MOGL's `if (NULL == glXxx)`
+            % checks on statically-linked function symbols.
+            macCFlags = ['CFLAGS=$CFLAGS' ...
+                ' -Wno-error=incompatible-function-pointer-types' ...
+                ' -Wno-deprecated-declarations' ...
+                ' -Wno-tautological-pointer-compare' ...
+                ' -DGL_SILENCE_DEPRECATION'];
+
             args = [{'-v', '-outdir', './', '-output', 'moglcore', ...
                      '-DMACOSX', '-DGLEW_STATIC', '-largeArrayDims', ...
                      'LDFLAGS=$LDFLAGS -framework OpenGL -framework GLUT', ...
+                     macCFlags, ...
                      ['-I' brewInclude]}, sources];
             mex(args{:});
 

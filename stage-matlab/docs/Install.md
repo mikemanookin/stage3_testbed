@@ -441,6 +441,16 @@ make(true)
 
 See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for the full design rationale.
 
+### `error: incompatible function pointer types passing 'void (GLboolean, void *)'` (MOGL build on macOS)
+
+Clang 16+ (Xcode 15+) made `-Wincompatible-function-pointer-types` an error by default. MOGL's `gl_manual.c` passes typed callbacks to `gluTessCallback`, whose declared signature is the K&R-era `void (*)()`. Historically C accepted this; modern clang rejects it.
+
+Fixed 2026-04-24 in `lib/MOGL/make.m` by demoting it back to a warning on macOS via `CFLAGS=$CFLAGS -Wno-error=incompatible-function-pointer-types`. Stage does not exercise the tessellation code path, so the technically-incompatible call is never made at runtime.
+
+The same commit also silenced the 90+ OpenGL deprecation warnings (`-DGL_SILENCE_DEPRECATION`) and the "comparison of function equal to null pointer" warnings (`-Wno-tautological-pointer-compare`) that arise from MOGL's `if (NULL == glXxx)` null-checks on statically-linked symbols.
+
+If you see this error on an older copy, pull the latest `lib/MOGL/make.m`.
+
 ### `fatal error: 'AGL/agl.h' file not found` (MOGL build on macOS)
 
 AGL (Apple Graphics Library) was removed from the macOS SDK in macOS 10.14 (Mojave). MOGL's `mogltypes.h` unconditionally included it under `#ifdef MATLAB_MEX_FILE`, even though AGL is only used in `glm.c` — the optional Psychtoolbox-era GLUT-like module that Stage does not build. Fixed on 2026-04-23 by tightening the guard to `#if defined(MATLAB_MEX_FILE) && defined(BUILD_GLM)`. Stage's build does not set `BUILD_GLM`, so the include is skipped, and the MOGL build compiles on Mojave+.
