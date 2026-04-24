@@ -119,9 +119,20 @@ function VerifyStage()
     end
 
     % --- 6. ffmpeg / ffprobe on PATH
+    % Auto-augment PATH on macOS if MATLAB was launched without a
+    % shell-inherited PATH (e.g. from Finder). No-op on Windows/Linux
+    % or if ffmpeg is already callable. See stage.util.ensureFFmpegOnPath.
+    try %#ok<TRYNC>
+        ffStatus = stage.util.ensureFFmpegOnPath();
+        if ffStatus.wasAdded
+            fprintf('  [note] added %s to PATH so ffmpeg is reachable\n', ...
+                ffStatus.addedDir);
+        end
+    end
+
     [status_ff,  ~] = system('ffmpeg -version');
     results(end+1) = ok('ffmpeg on PATH', status_ff == 0, ...
-        'Install ffmpeg: Linux `apt install ffmpeg`; macOS `brew install ffmpeg`.');
+        'Install ffmpeg: macOS `brew install ffmpeg`; Linux `apt install ffmpeg`; Windows `winget install Gyan.FFmpeg`.');
     [status_fp,  ~] = system('ffprobe -version');
     results(end+1) = ok('ffprobe on PATH', status_fp == 0, ...
         'Usually bundled with ffmpeg. Check install.');

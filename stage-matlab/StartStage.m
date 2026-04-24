@@ -94,6 +94,25 @@ function StartStage(varargin)
         % MATLAB releases.
     end
 
+    % Make ffmpeg callable. On macOS, MATLAB launched from Finder or Dock
+    % inherits a minimal PATH that misses /opt/homebrew/bin, so the
+    % Movie stimulus backend (VideoSource_FFmpeg) can't spawn ffmpeg.
+    % ensureFFmpegOnPath is a no-op if ffmpeg already works or we're on
+    % Windows/Linux; on macOS without ffmpeg on PATH it probes Homebrew
+    % and MacPorts directories and prepends the right one.
+    try
+        ffmpegStatus = stage.util.ensureFFmpegOnPath();
+        if ffmpegStatus.wasAdded
+            fprintf('[StartStage] ffmpeg: added %s to PATH\n', ffmpegStatus.addedDir);
+        elseif ~ffmpegStatus.ok
+            fprintf(2, ['[StartStage] ffmpeg not on PATH. Install via ' ...
+                '`brew install ffmpeg` (macOS) / `apt install ffmpeg` (Linux) / ' ...
+                '`winget install Gyan.FFmpeg` (Windows). Movie stimuli will fail.\n']);
+        end
+    catch ex
+        fprintf(2, '[StartStage] ensureFFmpegOnPath error (non-fatal): %s\n', ex.message);
+    end
+
     % ---- Dispatch to headless, modern UI, or legacy Swing UI ----
     mode = '';
     if ~isempty(varargin) && ischar(varargin{1})

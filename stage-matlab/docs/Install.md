@@ -459,14 +459,40 @@ If you see this error on an older copy of the source, edit `lib/MOGL/source/mogl
 #endif
 ```
 
-### `VideoSource_FFmpeg` hangs on Movie open
+### `VideoSource_FFmpeg` hangs on Movie open / "ffmpeg on PATH" FAILs in VerifyStage
 
-Almost certainly ffmpeg not on `PATH` in the Stage MATLAB session — even if it's on `PATH` in your shell. On macOS, launching MATLAB from the Dock gives it a minimal environment without Homebrew's PATH. Two fixes:
+On macOS, MATLAB launched from Finder, the Dock, or a `.command` file inherits a minimal PATH that does not include `/opt/homebrew/bin` (Apple Silicon Homebrew) or `/usr/local/bin` (Intel Homebrew). So `ffmpeg` installed via `brew install ffmpeg` isn't callable from MATLAB's `system()`, even though it works fine in Terminal.
 
-1. Launch MATLAB from a terminal that has `ffmpeg` on `PATH`: `open -a MATLAB_R2024b` after `brew install ffmpeg`.
-2. Symlink ffmpeg into a globally-visible location: `sudo ln -s /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg` (Apple Silicon paths may differ).
+**Auto-fix (default).** `StartStage` and `VerifyStage` both call `stage.util.ensureFFmpegOnPath()` on the way up. On macOS, if `ffmpeg -version` fails, that helper probes `/opt/homebrew/bin`, `/usr/local/bin`, and `/opt/local/bin` (MacPorts) in order and prepends the first one that has `ffmpeg` to `getenv('PATH')`. You should see a line like:
 
-Check by running `system('ffmpeg -version')` in the Stage MATLAB command window.
+```
+[StartStage] ffmpeg: added /opt/homebrew/bin to PATH
+```
+
+After that, `system('ffmpeg -version')` works for the rest of the MATLAB session.
+
+**Manual fixes**, if the auto-fix can't find your ffmpeg (installed somewhere unusual):
+
+1. **Launch MATLAB from Terminal** — inherits your shell PATH.
+
+   ```bash
+   open -a MATLAB_R2024b
+   ```
+
+2. **Symlink** — create a link at `/usr/local/bin` which macOS's default PATH includes.
+
+   ```bash
+   sudo ln -s /opt/homebrew/bin/ffmpeg  /usr/local/bin/ffmpeg
+   sudo ln -s /opt/homebrew/bin/ffprobe /usr/local/bin/ffprobe
+   ```
+
+3. **Set PATH manually** in MATLAB before calling `StartStage`:
+
+   ```matlab
+   setenv('PATH', ['/opt/homebrew/bin:' getenv('PATH')]);
+   ```
+
+Check which MATLAB sees by running `system('ffmpeg -version')` at the prompt.
 
 ### Movie stimulus shows a black frame
 
