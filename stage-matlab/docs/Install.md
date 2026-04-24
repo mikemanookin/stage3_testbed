@@ -443,15 +443,22 @@ See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for the full design rationale.
 
 ### MATLAB crashes with segfault in `glewContextInit` on macOS after window opens
 
-**Fixed 2026-04-24.** OpenGL contexts on macOS are thread-affine. Our main-thread-dispatch fix for GLFW (TASK-008) made `glfwMakeContextCurrent` run on the main thread, which binds the GL context there. But `moglcore`'s `mexFunction` runs on MATLAB's MCR interpreter thread by default, where no context is current — so its first `glGetString(GL_VERSION)` inside `glewContextInit` returns NULL and the dereference segfaults.
+**Fixed 2026-04-24 (final design).** OpenGL contexts on macOS are thread-affine. Our main-thread-dispatch fix for GLFW (TASK-008) initially made `glfwMakeContextCurrent` run on the main thread, which bound the GL context there — but `moglcore`'s `mexFunction` runs on MATLAB's MCR interpreter thread by default, where no context was current. First `glGetString(GL_VERSION)` inside `glewContextInit` returned NULL, segfault.
 
-The fix: `moglcore`'s `mexFunction` now self-dispatches to the main thread on macOS using the same `dispatch_sync(dispatch_get_main_queue(), ...)` pattern GLFW uses. Every MATLAB→OpenGL crossing hops to the main thread, uses the context there, and returns. Overhead is ~1 µs per hop, well within the 16 ms per-frame budget even at 60 Hz with hundreds of calls per frame.
+A brief attempt to fix this by dispatching `moglcore.mexFunction` to the main thread too was rejected: MATLAB's MEX runtime asserts that `mexAtExit` and related calls happen on the MCR thread (`findOrFail: no active context for type 'CurrentMexInfoPerMVM'`).
 
-If you see this crash on an older copy, pull the latest source and rebuild MOGL:
+The working design:
+- `glfwCreateWindow`, `glfwPollEvents`, `glfwSetGamma`, etc. — calls that touch NSWindow / TSM / Cocoa event loop — **stay dispatched to main thread**.
+- `glfwMakeContextCurrent`, `glfwSwapBuffers`, `glfwSwapInterval` — calls that bind or operate on the OpenGL context — **run on the MCR thread** (no dispatch).
+- `Window.m` constructor on macOS explicitly calls `glfwMakeContextCurrent(obj.handle)` right after `glfwCreateWindow` returns, to pull the context from the main thread (where `glfwCreateWindow` left it) to the MCR thread (where subsequent MEX-based GL calls will happen).
+
+Net effect: the OpenGL context lives on the MCR thread from then on, matching where `moglcore.mexFunction` runs. No more null glGetString. The main thread handles window events and Cocoa lifecycle; the MCR thread handles rendering.
+
+If you see this crash on an older copy, pull the latest source and rebuild the affected MEX files:
 
 ```matlab
-cd lib/MOGL
-make()
+cd lib/matlab-glfw3 && make(true)   % picks up the no-dispatch changes to makeCurrent/swap
+cd ../MOGL           && make()       % picks up the moglcore revert
 ```
 
 ### `error: incompatible function pointer types passing 'void (GLboolean, void *)'` (MOGL build on macOS)

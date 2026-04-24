@@ -394,7 +394,7 @@ Now not applicable since we actually have a Mac user.
 - [x] `glfwTerminate()` returns successfully — 2026-04-23 ✅
 - [x] All 30 `matlab-glfw3/*.c` files updated to wrap GLFW calls via GLFW_ON_MAIN — 2026-04-23 ✅
 - [x] `VerifyStage` passes all checks on macOS 15 / Apple Silicon — 2026-04-23 ✅
-- [x] MOGL's `moglcore.mexFunction` hops to main thread too, so GL calls see the context bound by glfwMakeContextCurrent — 2026-04-24. Without this, MATLAB segfaulted in `glewContextInit` → `glGetString` when the Stage window first opened.
+- [x] Fixed the GL-context thread-affinity sub-issue — 2026-04-24. See sub-issue below for the design (first attempt was wrong and had to be revised).
 - [ ] `StartStage` opens a real GLFW window on macOS and renders at least one frame — pending validation after moglcore rebuild
 - [ ] A basic stage demo (`stage.demos.expandingSpot` or similar) runs end-to-end
 - [ ] Verified behavior under `matlab -batch` mode — likely will NOT work; if it doesn't, document the limitation
@@ -403,11 +403,26 @@ Now not applicable since we actually have a Mac user.
 
 Discovered 2026-04-23 while testing the GLFW dispatch fix. macOS's OpenGL / Cocoa is strict about context-to-thread binding: `glfwMakeContextCurrent` marks a thread as the owner of the GL context, and subsequent GL calls are only valid on that thread. Under our main-thread-dispatch scheme, the GL context is pinned to the main thread, which means every GL call must also hop to the main thread.
 
-Options considered and rejected:
-- "Keep the context on the MCR thread by not dispatching glfwMakeContextCurrent" — would shift the problem; glfwSwapBuffers etc. still need Cocoa access from main thread.
-- "Use a dedicated GL worker thread with a command queue" — significant architecture change, no clear win.
+First attempt (rejected): dispatch `moglcore.mexFunction` to the main thread via the same `dispatch_sync` pattern. Crashed with an assertion deeper inside MATLAB's MEX runtime:
 
-Chosen: dispatch moglcore's mexFunction to main thread via the same dispatch_sync pattern. One-line addition at the top of mexFunction; self-recursion with pthread_main_np() short-circuit.
+```
+Assertion in findOrFail at management.cpp line 802:
+findOrFail: no active context for type 'CurrentMexInfoPerMVM'
+```
+
+MATLAB's MEX runtime relies on thread-local state (`CurrentMexInfoPerMVM`) that is only set up on the MCR interpreter thread. Running mexFunction on the main thread tripped this assertion when the function called `mexAtExit` (which registers a cleanup callback).
+
+**Working design (2026-04-24):**
+
+- GLFW calls that touch NSWindow / TSM / Cocoa event loop (`glfwCreateWindow`, `glfwPollEvents`, `glfwSetGamma`, etc.) stay dispatched to the main thread via GLFW_ON_MAIN.
+- GLFW calls that bind or operate on the OpenGL context (`glfwMakeContextCurrent`, `glfwSwapBuffers`, `glfwSwapInterval`) run on the **caller's thread** — they have no GLFW_ON_MAIN wrapper. `[NSOpenGLContext makeCurrentContext]` and `[flushBuffer]` are thread-agnostic Cocoa calls, safe to run from any thread.
+- `stage.core.Window` on macOS explicitly calls `glfwMakeContextCurrent(obj.handle)` right after `glfwCreateWindow` returns. Since `glfwCreateWindow` ran on the main thread under GLFW_ON_MAIN and left the context current there, this pulls the context to the MCR interpreter thread, where subsequent MATLAB-side GL calls (via moglcore) will happen.
+- `moglcore.mexFunction` runs on the MCR thread as MATLAB expects. No dispatch hop there. GL calls inside it find the current context on the same thread and succeed.
+
+Options considered and rejected:
+- "Dispatch moglcore.mexFunction to main thread" — breaks MATLAB's MEX-runtime thread-local state (see above).
+- "Use a dedicated GL worker thread with a command queue" — significant architecture change, no clear win over pinning to MCR thread.
+- "Keep context on main thread, make all GL calls from main" — essentially the first attempt; rejected.
 
 ### Temporary workaround (obsolete)
 

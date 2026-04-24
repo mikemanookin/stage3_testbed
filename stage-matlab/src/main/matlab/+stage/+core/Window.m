@@ -57,6 +57,23 @@ classdef Window < handle
 
             obj.monitor = monitor;
 
+            % On macOS, bind the OpenGL context to MATLAB's MCR
+            % interpreter thread. glfwCreateWindow ran on the main
+            % thread under our main-thread-dispatch scheme
+            % (lib/matlab-glfw3/glfw_mac_dispatch.h), which left the
+            % context current on the main thread — but moglcore
+            % (MATLAB's MEX that actually calls glGenTextures etc.)
+            % runs on the MCR thread. Without this explicit
+            % makeCurrent from the MCR thread, every subsequent GL
+            % call segfaults in glewContextInit. The
+            % glfwMakeContextCurrent wrapper intentionally does NOT
+            % dispatch to the main thread so that calling it from
+            % here binds the context to this thread. See
+            % spec/TASKS.md § TASK-008.
+            if ismac
+                glfwMakeContextCurrent(obj.handle);
+            end
+
             glfwSetInputMode(obj.handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_HIDDEN);
         end
 
