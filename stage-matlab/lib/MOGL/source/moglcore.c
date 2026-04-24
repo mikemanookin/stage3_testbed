@@ -19,6 +19,27 @@
 
 #include "mogltypes.h"
 
+#ifdef __APPLE__
+/*
+ * On macOS, OpenGL contexts are thread-affine: the thread on which
+ * glfwMakeContextCurrent was called is the thread where glGet/glDraw/
+ * etc. can succeed. Under our main-thread-dispatch scheme for GLFW
+ * (lib/matlab-glfw3/glfw_mac_dispatch.h), the context becomes current
+ * on the main thread — not on MATLAB's MCR interpreter thread where
+ * moglcore's mexFunction runs by default.
+ *
+ * Without this hop, the very first GL call inside mexFunction
+ * (glewContextInit → glGetString) returns NULL and we crash with a
+ * segfault dereferencing it. With the hop, all GL calls run on the
+ * main thread where the context IS current, and everything works.
+ *
+ * Overhead: each dispatch_sync hop costs ~1 µs. Even at 60 fps with
+ * hundreds of GL calls per frame, that's < 5% of the frame budget.
+ */
+#include <dispatch/dispatch.h>
+#include <pthread.h>
+#endif
+
 /* Build and include support for glm if BUILD_GLM is defined.
    Otherwise, only build OpenGL wrappers.
 */
@@ -100,6 +121,25 @@ void mexExitFunction(void)
 */
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
+#ifdef __APPLE__
+    /*
+     * Hop to the main thread if we aren't already there. On macOS,
+     * the OpenGL context bound via glfwMakeContextCurrent lives on
+     * the main thread (see glfw_mac_dispatch.h). GL calls from the
+     * MCR interpreter thread return NULL from glGetString and
+     * crash glewContextInit. dispatch_sync re-invokes this same
+     * function on the main queue; on re-entry pthread_main_np() is
+     * true and we fall through to the real work. MATLAB args stay
+     * valid because dispatch_sync blocks the caller.
+     */
+    if (!pthread_main_np()) {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            mexFunction(nlhs, plhs, nrhs, prhs);
+        });
+        return;
+    }
+#endif
+
     // Start of dispatcher:
     int i;
     GLenum err;

@@ -393,10 +393,21 @@ Now not applicable since we actually have a Mac user.
 - [x] `glfwGetMonitors()` returns successfully — 2026-04-23 ✅
 - [x] `glfwTerminate()` returns successfully — 2026-04-23 ✅
 - [x] All 30 `matlab-glfw3/*.c` files updated to wrap GLFW calls via GLFW_ON_MAIN — 2026-04-23 ✅
-- [ ] After rebuild, `VerifyStage` passes all checks on macOS 15 / Apple Silicon — pending user rebuild
-- [ ] `StartStage` opens a real GLFW window on macOS and renders at least one frame
+- [x] `VerifyStage` passes all checks on macOS 15 / Apple Silicon — 2026-04-23 ✅
+- [x] MOGL's `moglcore.mexFunction` hops to main thread too, so GL calls see the context bound by glfwMakeContextCurrent — 2026-04-24. Without this, MATLAB segfaulted in `glewContextInit` → `glGetString` when the Stage window first opened.
+- [ ] `StartStage` opens a real GLFW window on macOS and renders at least one frame — pending validation after moglcore rebuild
 - [ ] A basic stage demo (`stage.demos.expandingSpot` or similar) runs end-to-end
 - [ ] Verified behavior under `matlab -batch` mode — likely will NOT work; if it doesn't, document the limitation
+
+### Sub-issue: OpenGL context thread affinity on macOS
+
+Discovered 2026-04-23 while testing the GLFW dispatch fix. macOS's OpenGL / Cocoa is strict about context-to-thread binding: `glfwMakeContextCurrent` marks a thread as the owner of the GL context, and subsequent GL calls are only valid on that thread. Under our main-thread-dispatch scheme, the GL context is pinned to the main thread, which means every GL call must also hop to the main thread.
+
+Options considered and rejected:
+- "Keep the context on the MCR thread by not dispatching glfwMakeContextCurrent" — would shift the problem; glfwSwapBuffers etc. still need Cocoa access from main thread.
+- "Use a dedicated GL worker thread with a command queue" — significant architecture change, no clear win.
+
+Chosen: dispatch moglcore's mexFunction to main thread via the same dispatch_sync pattern. One-line addition at the top of mexFunction; self-recursion with pthread_main_np() short-circuit.
 
 ### Temporary workaround (obsolete)
 

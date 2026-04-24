@@ -441,6 +441,19 @@ make(true)
 
 See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for the full design rationale.
 
+### MATLAB crashes with segfault in `glewContextInit` on macOS after window opens
+
+**Fixed 2026-04-24.** OpenGL contexts on macOS are thread-affine. Our main-thread-dispatch fix for GLFW (TASK-008) made `glfwMakeContextCurrent` run on the main thread, which binds the GL context there. But `moglcore`'s `mexFunction` runs on MATLAB's MCR interpreter thread by default, where no context is current — so its first `glGetString(GL_VERSION)` inside `glewContextInit` returns NULL and the dereference segfaults.
+
+The fix: `moglcore`'s `mexFunction` now self-dispatches to the main thread on macOS using the same `dispatch_sync(dispatch_get_main_queue(), ...)` pattern GLFW uses. Every MATLAB→OpenGL crossing hops to the main thread, uses the context there, and returns. Overhead is ~1 µs per hop, well within the 16 ms per-frame budget even at 60 Hz with hundreds of calls per frame.
+
+If you see this crash on an older copy, pull the latest source and rebuild MOGL:
+
+```matlab
+cd lib/MOGL
+make()
+```
+
 ### `error: incompatible function pointer types passing 'void (GLboolean, void *)'` (MOGL build on macOS)
 
 Clang 16+ (Xcode 15+) made `-Wincompatible-function-pointer-types` an error by default. MOGL's `gl_manual.c` passes typed callbacks to `gluTessCallback`, whose declared signature is the K&R-era `void (*)()`. Historically C accepted this; modern clang rejects it.
