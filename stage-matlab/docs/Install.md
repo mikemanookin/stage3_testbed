@@ -391,6 +391,70 @@ Old MOGL `make.m` passed `-f ../mexopts.sh`, a pre-R2014 MEX options file. Moder
 
 Until 2026-04-23 the MOGL macOS branch passed `-I/usr/include` (the Intel-era Homebrew include path). On Apple Silicon Macs the Homebrew include path is `/opt/homebrew/include`. The updated `make.m` auto-detects which directory exists.
 
+### `ld: warning: ignoring file '…libglfw.dylib': found architecture 'x86_64', required architecture 'arm64'`
+
+You have Intel Homebrew at `/usr/local/lib/` but MATLAB on Apple Silicon (M1/M2/M3/M4) from R2023b onward is ARM-native and requires ARM-built libraries. Install ARM-native Homebrew side-by-side:
+
+```bash
+# 1. Install ARM Homebrew (auto-installs to /opt/homebrew on Apple Silicon)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. Follow the installer's "Next steps" to add /opt/homebrew/bin to PATH
+#    (it prints two eval lines to append to ~/.zprofile)
+
+# 3. Install GLFW and ffmpeg from the ARM brew
+brew install glfw ffmpeg
+
+# 4. Verify the library is arm64
+file /opt/homebrew/lib/libglfw.dylib
+# expected: "Mach-O 64-bit dynamically linked shared library arm64"
+```
+
+Then retry the MEX build. The updated `lib/matlab-glfw3/make.m` uses `computer()` (which returns `'MACA64'` on ARM-native MATLAB) to match the library prefix to MATLAB's architecture — if it finds only a mismatched version it warns loudly up-front instead of letting you discover the issue via 30 identical "undefined symbols" errors.
+
+Check your MATLAB architecture:
+
+```matlab
+computer   % 'MACA64' = ARM-native, 'MACI64' = Intel / Rosetta
+```
+
+### MATLAB crashes ("Trace trap") when `glfwInit()` is called on macOS 15+
+
+**Known limitation.** MATLAB on macOS runs user code on a worker thread (`MCR 0 interpreter thread`), not the process's main Cocoa thread. GLFW's macOS backend calls Apple's TSM (Text Services Manager) during `glfwInit`, and macOS 15 (Sequoia) enforces a hard main-thread-only assertion on those calls via `dispatch_assert_queue`. Result: the assertion fails, MATLAB dies with a Trace trap.
+
+This is not specific to Stage; any MATLAB code that calls `glfwInit` on macOS 15+ from the interpreter thread hits the same crash. It affects GLFW 3.4 and all prior 3.x versions.
+
+**Symptoms**:
+
+- `VerifyStage` dies during the GLFW init check.
+- Crash dump shows a stack with `_glfwInitCocoa` → `updateUnicodeData` → `TSMGetInputSourceProperty` → `dispatch_assert_queue_fail`.
+
+**Workarounds**:
+
+- **Linux is fully supported** and is the recommended cross-platform target today.
+- On macOS, you can launch `StartStage('legacy')` to run the old Swing UI — the crash doesn't fire there because `glfwInit` isn't called until the Stage window is actually created. But the crash will still hit when you click Start.
+- A real fix requires either (i) a MEX wrapper that dispatches `glfwInit` to the main queue via `dispatch_sync(dispatch_get_main_queue(), ...)` — tracked as TASK-008, or (ii) replacing GLFW with Psychtoolbox's `Screen` on macOS — larger refactor.
+
+See [spec/TASKS.md § TASK-008](../spec/TASKS.md) for status.
+
+### `fatal error: 'AGL/agl.h' file not found` (MOGL build on macOS)
+
+AGL (Apple Graphics Library) was removed from the macOS SDK in macOS 10.14 (Mojave). MOGL's `mogltypes.h` unconditionally included it under `#ifdef MATLAB_MEX_FILE`, even though AGL is only used in `glm.c` — the optional Psychtoolbox-era GLUT-like module that Stage does not build. Fixed on 2026-04-23 by tightening the guard to `#if defined(MATLAB_MEX_FILE) && defined(BUILD_GLM)`. Stage's build does not set `BUILD_GLM`, so the include is skipped, and the MOGL build compiles on Mojave+.
+
+If you see this error on an older copy of the source, edit `lib/MOGL/source/mogltypes.h` around line 49-51:
+
+```c
+/* Before: */
+#ifdef MATLAB_MEX_FILE
+#include <AGL/agl.h>
+#endif
+
+/* After: */
+#if defined(MATLAB_MEX_FILE) && defined(BUILD_GLM)
+#include <AGL/agl.h>
+#endif
+```
+
 ### `VideoSource_FFmpeg` hangs on Movie open
 
 Almost certainly ffmpeg not on `PATH` in the Stage MATLAB session — even if it's on `PATH` in your shell. On macOS, launching MATLAB from the Dock gives it a minimal environment without Homebrew's PATH. Two fixes:

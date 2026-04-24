@@ -339,6 +339,65 @@ TASK-002 measures the monitor's refresh rate by driving 120 empty flips at start
 
 ---
 
+## TASK-008 — `glfwInit` crashes MATLAB on macOS 15+ (main-thread assertion)
+
+**Spec:** [decisions/0002-cross-platform-direction.md](decisions/0002-cross-platform-direction.md)
+**Status:** Open — known limitation, blocks TASK-005 Phase 4 for macOS
+**Priority:** P2 (Linux is the primary cross-platform target; macOS revisit later)
+
+### Problem
+
+MATLAB runs user code on a worker thread (`MCR 0 interpreter thread`), not the process's main thread. GLFW's macOS backend (`_glfwInitCocoa`) calls Apple's TSM (Text Services Manager) during `glfwInit` to enumerate keyboard input sources. macOS 15 (Sequoia, 2024) enforces a hard `dispatch_assert_queue` assertion on TSM calls. The assertion fires on the MCR thread → MATLAB dies with a Trace trap.
+
+First observed 2026-04-23 on:
+- macOS 15.7.4 (24G517)
+- Apple Silicon (M4)
+- MATLAB R2024b (maca64)
+- GLFW 3.4 from Homebrew (/opt/homebrew)
+
+Crash stack: `mexFunction` → `glfwInit` → `_glfwInitCocoa` → `updateUnicodeData` → `TSMGetInputSourceProperty` → `islGetInputSourceListWithAdditions` → `dispatch_assert_queue_fail`.
+
+### Options
+
+**1. `glfwInit` MEX wrapper with main-thread dispatch** (preferred if feasible).
+
+Write a MEX that uses GCD to run `glfwInit` on the main queue:
+
+```c
+#include <dispatch/dispatch.h>
+...
+__block int rc = 0;
+dispatch_sync(dispatch_get_main_queue(), ^{
+    rc = glfwInit();
+});
+```
+
+Caveat: `dispatch_sync` to the main queue from a non-main thread requires the main thread to be actively draining its queue via a run loop. MATLAB's main thread runs a Cocoa run loop in desktop mode, probably not in `-nodesktop` mode — needs verification. If the main thread isn't pumping, this deadlocks.
+
+Every other Cocoa-touching GLFW call (`glfwCreateWindow`, `glfwPollEvents`, etc.) likely needs the same dispatch treatment — not just `glfwInit`. That's 30+ MEX wrappers to rewrite.
+
+**2. Replace GLFW on macOS with Psychtoolbox's `Screen`**.
+
+Psychtoolbox-3 is a widely-used MATLAB toolbox in the vision-science community that wraps all the platform-specific OpenGL context creation, including the macOS threading quirks. Replacing `lib/matlab-glfw3` with `Screen()` calls on macOS would solve the problem definitively but introduces a significant dependency and requires partial rewrites of `stage.core.Window`, `stage.core.Canvas`, and related.
+
+**3. Native-code Stage server on macOS** (ADR-0002 Option B).
+
+A C++ executable creates its own main thread and initializes GLFW on it. MATLAB becomes a thin client that talks to it over TCP. This is the original ADR-0002 Option B proposal — months of work but the real long-term fix.
+
+**4. Document as a permanent limitation on macOS, support only Linux cross-platform**.
+
+Research rigs overwhelmingly run Windows or Linux. If no macOS user needs Stage on their rig, accepting this limitation is cheap.
+
+### Acceptance criteria
+
+Depends on chosen option. Leave open; revisit once there's a user demanding macOS support.
+
+### Temporary workaround
+
+None that preserves functionality. `StartStage('legacy')` on macOS doesn't crash on launch (it defers `glfwInit` until the user clicks Start) but will crash at Start time for the same reason.
+
+---
+
 ## Task lifecycle
 
 - New tasks are appended with sequential numbering.

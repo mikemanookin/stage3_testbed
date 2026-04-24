@@ -84,8 +84,17 @@ end
 function brewPrefix = resolveMacPrefix()
 %RESOLVEMACPREFIX  Pick the right Homebrew root for this Mac.
 %
-%   Priority: env var GLFW_PREFIX > Apple Silicon default > Intel default.
-%   Falls back to /usr/local with a warning if nothing works.
+%   Priority:
+%     1. env var GLFW_PREFIX if it points somewhere with glfw3.h
+%     2. The architecture-matched default for this MATLAB:
+%          ARM MATLAB   (MACA64) → /opt/homebrew (ARM-native Homebrew)
+%          Intel MATLAB (MACI64) → /usr/local    (Intel Homebrew)
+%     3. The other prefix if only it has glfw3.h, with a LOUD warning
+%        (links will fail with "found architecture X, required Y").
+%
+%   MATLAB is ARM-native on Apple Silicon from R2023b onward. Earlier
+%   MATLAB ran under Rosetta and needed Intel libs. `computer()` is
+%   the authoritative check — 'MACA64' is ARM, 'MACI64' is Intel.
 
     envOverride = getenv('GLFW_PREFIX');
     if ~isempty(envOverride)
@@ -98,19 +107,41 @@ function brewPrefix = resolveMacPrefix()
             envOverride);
     end
 
-    % Apple Silicon: /opt/homebrew
-    if exist('/opt/homebrew/include/GLFW/glfw3.h', 'file')
-        brewPrefix = '/opt/homebrew';
+    isArmMatlab = strcmp(computer, 'MACA64');
+    if isArmMatlab
+        primary        = '/opt/homebrew';
+        primaryLabel   = 'ARM (Apple Silicon)';
+        secondary      = '/usr/local';
+        secondaryLabel = 'Intel';
+    else
+        primary        = '/usr/local';
+        primaryLabel   = 'Intel';
+        secondary      = '/opt/homebrew';
+        secondaryLabel = 'ARM (Apple Silicon)';
+    end
+
+    if exist(fullfile(primary, 'include', 'GLFW', 'glfw3.h'), 'file')
+        brewPrefix = primary;
         return;
     end
 
-    % Intel: /usr/local
-    if exist('/usr/local/include/GLFW/glfw3.h', 'file')
-        brewPrefix = '/usr/local';
+    if exist(fullfile(secondary, 'include', 'GLFW', 'glfw3.h'), 'file')
+        % Only the mismatched arch is available. mex will fail with
+        % "found architecture X, required architecture Y" — warn
+        % up-front so the user knows exactly what to fix.
+        warning('matlabGlfw3:make:archMismatch', ...
+            ['GLFW was found at %s (%s Homebrew) but this MATLAB is ' ...
+             '%s (computer()=''%s''). Linking will fail with an ' ...
+             'architecture-mismatch error. Install %s-native Homebrew ' ...
+             'and run "brew install glfw" from it. See ' ...
+             'docs/Install.md troubleshooting.'], ...
+            secondary, secondaryLabel, primaryLabel, computer, primaryLabel);
+        brewPrefix = secondary;
         return;
     end
 
     warning('matlabGlfw3:make:noPrefix', ...
-        'Could not find GLFW 3 headers. Did you run "brew install glfw"?');
-    brewPrefix = '/usr/local';  % best guess; mex will fail verbosely
+        ['Could not find GLFW 3 headers at /opt/homebrew/include or ' ...
+         '/usr/local/include. Did you run "brew install glfw"?']);
+    brewPrefix = primary;  % best guess; mex will fail verbosely
 end

@@ -46,7 +46,15 @@ extern mxArray *mxCreateSharedDataCopy(const mxArray *pr);
 #include <OpenGL/gl.h>
 #include <OpenGL/glu.h>
 #include <GLUT/glut.h>
-#ifdef MATLAB_MEX_FILE
+/*
+ * AGL (Apple Graphics Library) was removed from the macOS SDK in
+ * 10.14 (Mojave). It is only referenced from glm.c — the optional
+ * Psychtoolbox-era GLUT-like window/context module — so we only
+ * include it when BUILD_GLM is defined. Stage's MEX build does
+ * NOT define BUILD_GLM (GLFW handles windowing), so AGL is not
+ * needed. See docs/Install.md troubleshooting.
+ */
+#if defined(MATLAB_MEX_FILE) && defined(BUILD_GLM)
 #include <AGL/agl.h>
 #endif
 #define CALLCONV
