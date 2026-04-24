@@ -154,11 +154,28 @@ If ADR-0002 is accepted as Option A, this task becomes P1 — the UI will break 
 
 ## TASK-005 — Cross-platform support (macOS + Linux)
 
-**Spec:** [decisions/0002-cross-platform-direction.md](decisions/0002-cross-platform-direction.md) (accepted as Option A on 2026-04-23)
+**Spec:** [decisions/0002-cross-platform-direction.md](decisions/0002-cross-platform-direction.md) (accepted as Option A on 2026-04-23; platform-role asymmetry added 2026-04-24)
 **Status:** Open
 **Priority:** P1
 
 Stage runs only on Windows today, not because the MATLAB source or the OpenGL rendering is Windows-bound, but because the platform-specific **MEX binaries** and a single platform-specific **dependency** (AVbin) have never been built or replaced for macOS / Linux. The full survey is in ADR-0002 § Option A — scope reality check.
+
+### Platform-role reminder (see ADR-0002)
+
+- **Windows / Linux**: production experiment rigs. Frame-perfect timing required.
+- **macOS**: development / preview only. Frame drops tolerable; no DAQ hardware involved.
+
+Performance acceptance criteria differ between the production platforms and Mac:
+
+| Criterion | Windows / Linux | macOS |
+|---|---|---|
+| Visible output matches the protocol | Required | Required |
+| Vsync-locked frame timing | Required | Preferred but not required |
+| Zero dropped frames under protocol load | Required | Tolerable up to ~5% dropped frames |
+| Empirical refresh-rate accuracy ≤ 0.02 Hz | Required | Not required (integer from GLFW is fine) |
+| Mid-presentation stop within ~1 frame | Required | Preferred but not tested |
+
+Every Mac-specific workaround landed as of 2026-04-24 is either compile-time (`#ifdef __APPLE__`) or runtime (`if ismac`) gated, so it has zero effect on Win/Linux binaries.
 
 ### Phase 1 — Code changes (platform-independent, no host needed) ✅ complete 2026-04-23
 
@@ -183,12 +200,23 @@ Stage runs only on Windows today, not because the MATLAB source or the OpenGL re
 
 ### Phase 4 — Symphony end-to-end validation (per OS, hardware needed)
 
-- [ ] On each OS, run the full Symphony → Stage loop with a real DAQ or simulation-mode DAQ. Verify:
-  - Monitor refresh rate measurement completes in < 3 s
-  - A Movie stimulus plays cleanly (VideoReader path)
-  - A realtime controller-driven stimulus (e.g. expandingSpot) runs without frame drops at 60 Hz
-  - `info.flipTimestamps` / `info.flipDurations` are populated correctly
-  - Mid-presentation stop (TASK-001 path) honors `stopRequested` within ~1 frame
+**Windows / Linux** (production rigs, real DAQ hardware):
+
+- [ ] Full Symphony → Stage loop with a real DAQ or simulation-mode DAQ
+- [ ] Monitor refresh rate measurement completes in < 3 s, accurate to ≤ 0.02 Hz
+- [ ] A Movie stimulus plays cleanly (ffmpeg-subprocess backend)
+- [ ] A realtime controller-driven stimulus (e.g. expandingSpot) runs **without frame drops** at native refresh
+- [ ] `info.flipTimestamps` / `info.flipDurations` are populated correctly
+- [ ] Mid-presentation stop (TASK-001 path) honors `stopRequested` within ~1 frame
+
+**macOS** (simulation / preview only, no DAQ hardware):
+
+- [ ] Stage server starts, window appears
+- [ ] A client MATLAB can `client.connect()` and `client.play(player)` with a simple Presentation
+- [ ] The stimulus is **visually correct** (shapes, colors, motion) on screen
+- [ ] `info.flipTimestamps` is populated (content matters, perfect timing doesn't)
+
+Frame drops on macOS are acceptable and do NOT block macOS validation.
 
 ### Phase 5 — AVbin cleanup (blocked on TASK-006)
 

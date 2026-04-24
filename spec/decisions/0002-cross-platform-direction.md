@@ -2,10 +2,38 @@
 
 ## Status
 **Accepted — 2026-04-23. Option A (keep MATLAB, fix the platform gaps).**
+**Refined — 2026-04-24: platform-role asymmetry.**
 
 The survey documented below ([Option A — scope reality check](#option-a--scope-reality-check)) showed that the Windows-specific surface area is much smaller than the original "hypothetical port" framing assumed. Most of the low-level MEX sources already branch on `ispc`/`ismac`/`isunix`; the gap is that only Windows binaries have ever been compiled and shipped. The residual hard part is `matlab-avbin` (abandoned library, no Mac/Linux binaries) — addressed by replacing its backend with MATLAB's built-in `VideoReader`.
 
 Options B and C (C++ / C# rewrite) remain recorded below but are not being pursued in this cycle. They would be re-opened if empirical validation on macOS/Linux reveals issues the Option A approach cannot fix within Stage's timing tolerances.
+
+## Platform roles (2026-04-24 refinement)
+
+Not every supported platform has the same requirements:
+
+| Platform | Role | Performance bar |
+|---|---|---|
+| **Windows** | Production experiment rigs | Full vsync-locked rendering at native refresh, zero frame drops under protocol load. Real DAQ hardware attached (NI-DAQmx, HEKA ITC). |
+| **Linux** | Production experiment rigs | Same as Windows. Real DAQ hardware. |
+| **macOS** | **Development / stimulus preview only** | Must run and visually render correctly. Frame-perfect timing NOT required — occasional frame drops and moderate jitter are acceptable. No DAQ hardware, simulation-only. |
+
+### Implications for design decisions
+
+- **Mac-specific workarounds are free as long as they cost nothing on Win/Linux.** When a Mac-only branch is compile-time-eliminated (`#ifdef __APPLE__`) or runtime-skipped (`if ismac`), it's fine. The 2026-04-24 macOS work (TASK-008) meets this bar — Win/Linux MEX binaries have identical instruction sequences to the pre-work state.
+- **Never compromise Win/Linux performance for Mac compatibility.** If a proposed fix would add a per-frame branch, a thread hop, or a memory copy on the production rigs, reject it and find a Mac-local alternative instead.
+- **Mac is allowed to be slower, not incorrect.** Visual output must be pixel-correct; frame timing can drift. This reframes how we think about bugs: a 5 ms render-loop jitter on Mac is a known-acceptable trade, but a wrong color or missing stimulus is a blocker.
+- **Future work scoping**:
+  - TASK-006 (video backend): ffmpeg-subprocess approach is acceptable everywhere; no Mac-specific variant needed.
+  - TASK-007 (refresh-rate override): useful on all platforms, not Mac-specific.
+  - TASK-008 (main-thread dispatch): macOS-only by construction; not compiled into Win/Linux binaries.
+  - ADR-0003 (CUDA acceleration): Windows/Linux only; macOS can skip entirely.
+
+### Why macOS doesn't need frame-perfect timing
+
+A researcher authoring a stimulus on their Mac desktop wants to see whether the stimulus *looks right* — correct shapes, colors, motion, timing characteristics that are visible to the human eye. If a 60 Hz stimulus occasionally runs at 58 or 63 on Mac because of macOS's thread-crossing overhead, the researcher gets all the visual information they need to iterate. The production Linux or Windows rig, when the same protocol is deployed there, renders with frame-perfect timing for the actual electrophysiology.
+
+This also means: macOS doesn't need to satisfy TASK-002's "≤ 0.02 Hz" refresh-rate accuracy target. Measurement on Mac can be coarser without affecting real-world use.
 
 ## Context
 

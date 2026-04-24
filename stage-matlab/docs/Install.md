@@ -2,6 +2,20 @@
 
 This guide walks you through installing the Stage testbed on Windows, macOS, and Linux. It covers prerequisites, building the MEX binaries, verifying the install, and running the server.
 
+## Platform roles
+
+Stage targets three platforms, but they serve different purposes:
+
+| Platform | Role | Notes |
+|---|---|---|
+| **Windows** | Production experiment rigs | Frame-perfect rendering; real DAQ hardware (NI-DAQmx, HEKA ITC). |
+| **Linux** | Production experiment rigs | Same as Windows. |
+| **macOS** | Development / stimulus preview | No DAQ hardware. Frame drops tolerable — the Mac is for *authoring* and *visually previewing* stimuli before deploying to a real rig. |
+
+If your Mac runs a stimulus a bit jittery or at a slightly wrong rate, that's fine — you only need enough fidelity to see that the stimulus *looks right* before pushing it to Windows or Linux for the actual experiment. Do NOT treat Mac frame drops as blockers.
+
+See [spec/decisions/0002-cross-platform-direction.md](../../spec/decisions/0002-cross-platform-direction.md) for the full rationale.
+
 ## Contents
 
 - [Prerequisites (all OSs)](#prerequisites-all-oss)
