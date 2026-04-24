@@ -45,8 +45,7 @@ function StartStage(varargin)
         {fullfile(root, 'lib', 'matlab-dwm'),                                         true},  ...
         {fullfile(root, 'lib', 'matlab-priority'),                                    true},  ...
         {fullfile(root, 'lib', 'MOGL'),                                               true},  ...  % OpenGL bindings
-        {fullfile(root, 'lib', 'netbox', 'src', 'main', 'matlab'),                    false}, ...  % +netbox + +netbox.+tcp
-        {fullfile(root, 'lib', 'netbox', 'src', 'main', 'matlab', '+netbox', '+tcp'), false}, ...
+        {fullfile(root, 'lib', 'netbox', 'src', 'main', 'matlab'),                    false}, ...  % +netbox (and +netbox.+tcp is auto-discovered)
         {fullfile(root, 'apps', 'stage-server', 'src', 'main', 'matlab'),             false}, ...  % +stageui + main.m
         {fullfile(root, 'apps', 'stage-server', 'lib', 'appbox'),                     true}   ...  % BusyPresenter etc.
     };
