@@ -4,9 +4,10 @@
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
-    int major = 0;
-    int minor = 0;
-    int rev = 0;
+    /* GLFW_BLOCK required — see glfwGetWindowSize.c comment. */
+    GLFW_BLOCK int major = 0;
+    GLFW_BLOCK int minor = 0;
+    GLFW_BLOCK int rev = 0;
 
     if (nrhs != 0)
     {

@@ -395,8 +395,9 @@ Now not applicable since we actually have a Mac user.
 - [x] All 30 `matlab-glfw3/*.c` files updated to wrap GLFW calls via GLFW_ON_MAIN — 2026-04-23 ✅
 - [x] `VerifyStage` passes all checks on macOS 15 / Apple Silicon — 2026-04-23 ✅
 - [x] Fixed the GL-context thread-affinity sub-issue — 2026-04-24. See sub-issue below for the design (first attempt was wrong and had to be revised).
-- [ ] `StartStage` opens a real GLFW window on macOS and renders at least one frame — pending validation after moglcore rebuild
-- [ ] A basic stage demo (`stage.demos.expandingSpot` or similar) runs end-to-end
+- [x] `StartStage` opens a real GLFW window on macOS — 2026-04-24 ✅
+- [x] A second MATLAB can connect as a StageClient and poll `getMonitorRefreshRate` — 2026-04-24 ✅
+- [ ] A basic stage demo (`stage.demos.expandingSpot` or similar) runs end-to-end — next to verify
 - [ ] Verified behavior under `matlab -batch` mode — likely will NOT work; if it doesn't, document the limitation
 
 ### Sub-issue: OpenGL context thread affinity on macOS

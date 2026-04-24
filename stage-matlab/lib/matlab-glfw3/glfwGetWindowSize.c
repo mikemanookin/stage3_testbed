@@ -6,8 +6,16 @@
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     GLFWwindow *window;
-    int width = 0;
-    int height = 0;
+    /*
+     * GLFW_BLOCK (expands to __block on clang) is REQUIRED here.
+     * Without it, `&width` inside the dispatch block yields the
+     * address of the block's captured COPY of width, not the
+     * outer stack variable — so glfwGetWindowSize writes into a
+     * copy that is discarded when the block returns, and the
+     * outer width stays 0. Same for height.
+     */
+    GLFW_BLOCK int width = 0;
+    GLFW_BLOCK int height = 0;
 
     if (nrhs != 1)
     {

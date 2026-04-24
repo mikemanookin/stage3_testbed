@@ -6,8 +6,9 @@
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     GLFWmonitor *monitor;
-    int width = 0;
-    int height = 0;
+    /* GLFW_BLOCK required — see glfwGetWindowSize.c comment. */
+    GLFW_BLOCK int width = 0;
+    GLFW_BLOCK int height = 0;
 
     if (nrhs != 1)
     {
