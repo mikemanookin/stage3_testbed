@@ -23,22 +23,39 @@ function make(rebuild)
     filePath = mfilename('fullpath');
     projectDir = fileparts(filePath);
 
+    % NOTE: we no longer rely on MATLAB's current folder. Some macOS
+    % launch paths (double-click the .app from Finder) start MATLAB
+    % with pwd set to the .app bundle's Resources folder, and even
+    % after `cd(projectDir)` mex has been observed to look for source
+    % files relative to the original launch dir. Pass ABSOLUTE paths
+    % to both the source file and -outdir, plus -I for the local dir
+    % so `#include "glfw_mac_dispatch.h"` resolves.
+    %
+    % (cd is still nice to have so -I"." etc. work as a fallback, but
+    % nothing critical depends on it anymore.)
     currentDir = pwd;
     returnToDir = onCleanup(@()cd(currentDir));
-    cd(projectDir);
+    try %#ok<TRYNC>
+        cd(projectDir);
+    end
 
     % --- Compose per-OS options ---------------------------------------
+    % Always include the project directory on the header search path
+    % so `#include "glfw_mac_dispatch.h"` (and any other local helper
+    % header) is found regardless of CWD.
+    localInclude = sprintf(' -I"%s"', projectDir);
+
     if ispc
         % Windows: expect a bundled glfw3.lib in this directory.
-        options = [' -L"' projectDir '" -lglfw3'];
+        options = [localInclude ' -L"' projectDir '" -lglfw3'];
     elseif ismac
         brewPrefix = resolveMacPrefix();
-        options = sprintf(' -I"%s/include" -L"%s/lib" -lglfw LDFLAGS="\\$LDFLAGS -framework Cocoa -framework OpenGL -framework IOKit -framework CoreVideo"', ...
-            brewPrefix, brewPrefix);
+        options = sprintf('%s -I"%s/include" -L"%s/lib" -lglfw LDFLAGS="\\$LDFLAGS -framework Cocoa -framework OpenGL -framework IOKit -framework CoreVideo"', ...
+            localInclude, brewPrefix, brewPrefix);
     else
         % Linux: libglfw3-dev installs headers to /usr/include and the
         % library to a standard linker path; no explicit -I/-L needed.
-        options = ' -lglfw';
+        options = [localInclude ' -lglfw'];
     end
 
     % --- Build each .c in this directory ------------------------------
@@ -49,10 +66,12 @@ function make(rebuild)
 
         [~, name] = fileparts(source.name);
         mexname = [name '.' mexext];
-        mexfile = dir(mexname);
+        mexfile = dir(fullfile(projectDir, mexname));
+        sourceAbs = fullfile(projectDir, source.name);
 
         if rebuild || isempty(mexfile) || datenum(source.date) > datenum(mexfile.date)
-            command = sprintf('mex %s %s', options, source.name);
+            command = sprintf('mex -outdir "%s" %s "%s"', ...
+                projectDir, options, sourceAbs);
             disp(command);
 
             try
