@@ -117,25 +117,6 @@ void mexExitFunction(void)
 */
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
-#ifdef __APPLE__
-    /*
-     * Hop to the main thread if we aren't already there. On macOS,
-     * the OpenGL context bound via glfwMakeContextCurrent lives on
-     * the main thread (see glfw_mac_dispatch.h). GL calls from the
-     * MCR interpreter thread return NULL from glGetString and
-     * crash glewContextInit. dispatch_sync re-invokes this same
-     * function on the main queue; on re-entry pthread_main_np() is
-     * true and we fall through to the real work. MATLAB args stay
-     * valid because dispatch_sync blocks the caller.
-     */
-    if (!pthread_main_np()) {
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            mexFunction(nlhs, plhs, nrhs, prhs);
-        });
-        return;
-    }
-#endif
-
     // Start of dispatcher:
     int i;
     GLenum err;
