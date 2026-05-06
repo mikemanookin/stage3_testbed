@@ -110,6 +110,115 @@ classdef Player < handle
             writer.close();
         end
 
+        function exportFrames(obj, canvas, filename, frameRate)
+            % Exports the presentation to a .MAT file as a raw H×W×C×N
+            % uint8 RGB frame stack. Mirrors exportMovie but skips the
+            % video codec — output is the byte-exact framebuffer the
+            % compositor produced, suitable for offline regeneration
+            % and pixel-perfect analysis.
+            %
+            %   exportFrames(canvas, filename, frameRate)
+            %   exportFrames(canvas, filename)              % rate = monitor refresh rate
+            %
+            % The supplied frameRate is used directly in
+            %   state.time = state.frameTime = frame / frameRate
+            % so the .MAT contents are deterministic — Stage doesn't
+            % measure the rate empirically here. Pass the value you
+            % want stamped into the saved frames' time field (often
+            % the rig's calibrated display rate).
+            %
+            % .MAT layout:
+            %   frames          uint8, H×W×C×N (RGB; default Canvas pixel order).
+            %   frameRate       double, scalar (Hz).
+            %   duration        double, scalar (seconds; presentation.duration).
+            %   frameCount      double, scalar (N).
+            %   backgroundColor presentation.backgroundColor at init.
+            %   frameLog        1×N struct array — per-frame
+            %                   {frame, time, frameTime}. Mirrors what
+            %                   each stimulus controller saw.
+            %
+            % Files >~2 GB use HDF5-backed v7.3 automatically.
+            %
+            % See spec/specs/PLAYER_LIFECYCLE.md § Frame state for the
+            % deterministic-time rationale; same justification as
+            % RegenPlayer.prerender's frame-indexed time.
+
+            if nargin < 4
+                frameRate = canvas.window.monitor.refreshRate;
+            end
+
+            obj.compositor.init(canvas);
+            canvas.setClearColor(obj.presentation.backgroundColor);
+
+            stimuli = obj.presentation.stimuli;
+            controllers = obj.presentation.controllers;
+            for i = 1:length(stimuli)
+                stimuli{i}.init(canvas);
+            end
+
+            estFrames = max(1, floor(obj.presentation.duration * frameRate));
+            frameLog = repmat(struct('frame', 0, 'time', 0, 'frameTime', 0), 1, estFrames);
+            frames = [];  % H/W/C unknown until the first read
+            n = 0;
+
+            frame = 0;
+            time = frame / frameRate;
+            while time < obj.presentation.duration
+                canvas.clear();
+
+                state.canvas = canvas;
+                state.frame = frame;
+                state.frameRate = frameRate;
+                state.time = time;
+                state.frameTime = time;
+                obj.compositor.drawFrame(stimuli, controllers, state);
+
+                pixelData = canvas.getPixelData();
+                if isempty(frames)
+                    [h, w, c] = size(pixelData);
+                    frames = zeros(h, w, c, estFrames, 'uint8');
+                end
+
+                n = n + 1;
+                if n > size(frames, 4)
+                    % Defensive: presentation.duration produced more
+                    % frames than estimated (fractional duration, etc.).
+                    % Grow the buffer; this should be rare.
+                    frames(:, :, :, end + 1) = pixelData; %#ok<AGROW>
+                    frameLog(end + 1) = struct('frame', frame, 'time', time, 'frameTime', time); %#ok<AGROW>
+                else
+                    frames(:, :, :, n) = pixelData;
+                    frameLog(n) = struct('frame', frame, 'time', time, 'frameTime', time);
+                end
+
+                canvas.window.pollEvents();
+
+                frame = frame + 1;
+                time = frame / frameRate;
+            end
+
+            % Trim the over-allocated tail (the floor()+1 race above).
+            if n < size(frames, 4)
+                frames = frames(:, :, :, 1:n);
+                frameLog = frameLog(1:n);
+            end
+
+            duration = obj.presentation.duration;
+            frameCount = n;
+            backgroundColor = obj.presentation.backgroundColor;
+
+            % v7.3 (HDF5-backed) for files larger than MATLAB's old-MAT
+            % 2 GB limit. uint8 RGB at 1024×768 × 60 Hz × 30 s ≈ 4 GB,
+            % so the threshold gets hit on routine recordings.
+            estBytes = numel(frames);  % 1 byte/elem
+            saveArgs = {filename, 'frames', 'frameRate', 'duration', ...
+                        'frameCount', 'backgroundColor', 'frameLog'};
+            if estBytes > 1.8e9
+                saveArgs{end + 1} = '-v7.3';
+            end
+            save(saveArgs{:});
+        end
+
     end
 
     methods (Access = protected)

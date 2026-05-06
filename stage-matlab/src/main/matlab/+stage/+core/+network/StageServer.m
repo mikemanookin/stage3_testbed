@@ -26,9 +26,18 @@ classdef StageServer < handle
         end
         
         function start(obj, size, fullscreen, monitor, varargin)
-            % Creates a window/canvas and starts serving clients. This method will block the current Matlab session 
+            % Creates a window/canvas and starts serving clients. This method will block the current Matlab session
             % until the shift and escape key are held while the window has focus.
-            
+            %
+            % Optional name/value parameters:
+            %   'disableDwm'   (default true)   - disable Windows DWM compositing on the canvas
+            %   'refreshRate'  (default [])     - if a positive double is supplied, pin the
+            %                                     monitor's reported rate to that value and
+            %                                     skip the empirical measurement entirely.
+            %                                     Use when the caller already has a calibrated
+            %                                     value (e.g. Symphony's DAQ-clock measurement)
+            %                                     or for deterministic replay / unit tests.
+
             if nargin < 2
                 size = [640, 480];
             end
@@ -40,28 +49,50 @@ classdef StageServer < handle
             end
             ip = inputParser();
             ip.addParameter('disableDwm', true);
+            ip.addParameter('refreshRate', []);
             ip.parse(varargin{:});
-            
+
+            % Validate the override before opening the window so a bad
+            % value fails fast rather than after the canvas comes up.
+            overrideRate = ip.Results.refreshRate;
+            if ~isempty(overrideRate)
+                if ~isnumeric(overrideRate) || ~isscalar(overrideRate) ...
+                        || ~isfinite(overrideRate) || overrideRate <= 0
+                    error('stage:StageServer:invalidRefreshRate', ...
+                        ['refreshRate must be a positive finite numeric scalar; ' ...
+                         'got %s.'], mat2str(overrideRate));
+                end
+                overrideRate = double(overrideRate);
+            end
+
             stop = onCleanup(@()obj.stop());
-            
+
             window = stage.core.Window(size, fullscreen, monitor);
             obj.canvas = stage.core.Canvas(window, 'disableDwm', ip.Results.disableDwm);
             obj.canvas.clear();
             obj.canvas.window.flip();
 
-            % Empirically measure the monitor's true refresh rate. GLFW's
-            % integer mode rate misses NTSC-era 59.94 / 119.88 Hz panels
-            % by ~1 %, which accumulates to hundreds of milliseconds over
-            % a long epoch. Done once here so the server publishes the
-            % measured rate via getMonitorRefreshRate and all players use
-            % it. See spec/specs/MONITOR_TIMING.md and TASK-002.
-            try
-                measured = window.monitor.measureRefreshRate(window);
-                fprintf('Monitor refresh rate: %.4f Hz (measured)\n', measured);
-            catch ex
-                fprintf(2, ['[StageServer] refresh-rate measurement ' ...
-                    'failed, falling back to GLFW integer (%d Hz): %s\n'], ...
-                    window.monitor.refreshRate, ex.message);
+            % Refresh-rate resolution. Three precedence levels:
+            %   1. Caller-supplied refreshRate kwarg → pin and skip
+            %      empirical measurement. Symphony (or a test harness)
+            %      knows the value better than we can measure.
+            %   2. Empirical median-of-N measurement against vsync
+            %      (default path; see TASK-002 / MONITOR_TIMING.md).
+            %   3. GLFW integer fallback if measurement fails.
+            % A wire event 'setMonitorRefreshRate' (added per TASK-007)
+            % can also override at any later point outside of a play.
+            if ~isempty(overrideRate)
+                window.monitor.setRefreshRate(overrideRate);
+                fprintf('Monitor refresh rate: %.4f Hz (caller-supplied)\n', overrideRate);
+            else
+                try
+                    measured = window.monitor.measureRefreshRate(window);
+                    fprintf('Monitor refresh rate: %.4f Hz (measured)\n', measured);
+                catch ex
+                    fprintf(2, ['[StageServer] refresh-rate measurement ' ...
+                        'failed, falling back to GLFW integer (%d Hz): %s\n'], ...
+                        window.monitor.refreshRate, ex.message);
+                end
             end
 
             disp(['Serving on port: ' num2str(obj.port)]);
@@ -123,6 +154,8 @@ classdef StageServer < handle
                         obj.onEventResetCanvasRenderer(connection, event);
                     case 'getMonitorRefreshRate'
                         obj.onEventGetMonitorRefreshRate(connection, event);
+                    case 'setMonitorRefreshRate'
+                        obj.onEventSetMonitorRefreshRate(connection, event);
                     case 'getMonitorResolution'
                         obj.onEventGetMonitorResolution(connection, event);
                     case 'setMonitorGamma'
@@ -203,6 +236,27 @@ classdef StageServer < handle
         function onEventGetMonitorRefreshRate(obj, connection, event) %#ok<INUSD>
             rate = obj.canvas.window.monitor.refreshRate;
             connection.sendEvent(netbox.NetEvent('ok', rate));
+        end
+
+        function onEventSetMonitorRefreshRate(obj, connection, event)
+            % Pin the monitor's refresh rate to a caller-supplied value.
+            % Same precedence as the StageServer 'refreshRate' start
+            % kwarg — replaces the empirically-measured value (or any
+            % previous override) for all subsequent
+            % getMonitorRefreshRate calls and player frame timing.
+            %
+            % See spec/specs/MONITOR_TIMING.md § precedence and TASK-007.
+            % Only valid outside of a play. The 'play' handler runs the
+            % frame loop synchronously and intercepts incoming events
+            % before this dispatcher; if a setMonitorRefreshRate event
+            % arrives mid-play (only possible if the caller's wire
+            % protocol implementation reorders events), the
+            % Monitor.setRefreshRate call still updates the closure but
+            % the in-progress play won't pick up the change.
+            rate = event.arguments{1};
+            obj.canvas.window.monitor.setRefreshRate(rate);
+            fprintf('Monitor refresh rate updated: %.4f Hz (caller-supplied)\n', rate);
+            connection.sendEvent(netbox.NetEvent('ok'));
         end
         
         function onEventGetMonitorResolution(obj, connection, event) %#ok<INUSD>

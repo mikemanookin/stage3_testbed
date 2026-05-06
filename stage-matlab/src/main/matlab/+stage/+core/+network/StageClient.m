@@ -79,7 +79,25 @@ classdef StageClient < handle
             e = netbox.NetEvent('getMonitorRefreshRate');
             r = obj.sendReceive(e);
         end
-        
+
+        function setMonitorRefreshRate(obj, rate)
+            % Pins the remote monitor's refresh rate to a caller-supplied
+            % value (Hz). Use when the local rig has a calibrated rate
+            % (e.g. a DAQ-clock measurement) more accurate than whatever
+            % Stage measured via vsync at startup. Once set, subsequent
+            % getMonitorRefreshRate calls return the supplied value and
+            % player frame timing uses it directly.
+            %
+            % Caller responsibility: send only outside of an active play.
+            % See TASK-007 / spec/specs/MONITOR_TIMING.md.
+            if ~isnumeric(rate) || ~isscalar(rate) || ~isfinite(rate) || rate <= 0
+                error('stage:StageClient:invalidRefreshRate', ...
+                    'rate must be a positive finite numeric scalar; got %s.', mat2str(rate));
+            end
+            e = netbox.NetEvent('setMonitorRefreshRate', double(rate));
+            obj.sendReceive(e);
+        end
+
         function setMonitorGamma(obj, gamma)
             % Sets the remote monitor gamma ramp from the given gamma exponent.
             e = netbox.NetEvent('setMonitorGamma', gamma);

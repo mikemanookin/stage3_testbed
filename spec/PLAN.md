@@ -10,6 +10,14 @@ Strategic direction and roadmap. Tactical work items live in [TASKS.md](TASKS.md
 - Single-connection server (`netbox.Server` accepts one connection at a time; its `serve` loop blocks in an event handler until the handler returns).
 - Players (`RealtimePlayer`, `PrerenderedPlayer`, `RegenPlayer`) run a frame loop that terminates only when `presentation.duration` elapses.
 - No mid-presentation stop mechanism exists. Stop can only be triggered by terminating the server process (shift + escape in the Stage window).
+- Player base class exposes two offline export paths:
+  - `exportMovie(canvas, filename, frameRate, profile)` — encoded video via `VideoWriter`.
+  - `exportFrames(canvas, filename, frameRate)` — raw `H × W × C × N` uint8 RGB stack saved to a `.MAT` for pixel-perfect regeneration / analysis. Both accept a passed-in `frameRate` that's stamped directly into `state.time = frame / frameRate` — Stage doesn't measure empirically on the export path.
+- Live-player refresh rate can be pinned by the caller (TASK-007) via three surfaces, all converging on `Monitor.setRefreshRate`:
+  - `StageServer.start(..., 'refreshRate', rate)` kwarg at startup.
+  - Wire event `setMonitorRefreshRate(rate)` between plays.
+  - `StageClient.setMonitorRefreshRate(rate)` Symphony-side wrapper.
+  - When unset, the empirical measurement (TASK-002) runs as before.
 
 ## Roadmap
 

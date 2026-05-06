@@ -30,6 +30,7 @@ These complete within one serve-loop iteration. The client's `sendReceive` block
 | `setCanvasRenderer` | `{renderer}` | `ok` |
 | `resetCanvasRenderer` | — | `ok` |
 | `getMonitorRefreshRate` | — | `ok, refreshRate` |
+| `setMonitorRefreshRate` | `{rate}` (positive finite double, Hz) | `ok` |
 | `getMonitorResolution` | — | `ok, [w h]` |
 | `setMonitorGamma` | `{gamma}` | `ok` |
 | `getMonitorGammaRamp` | — | `ok, {red, green, blue}` |

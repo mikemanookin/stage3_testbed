@@ -16,6 +16,8 @@ If your Mac runs a stimulus a bit jittery or at a slightly wrong rate, that's fi
 
 See [spec/decisions/0002-cross-platform-direction.md](../../spec/decisions/0002-cross-platform-direction.md) for the full rationale.
 
+> **Symphony→Stage testing on macOS:** the Symphony 3 UI does not run reliably on macOS R2024b due to MATLAB .NET Core bridge bugs. For Symphony-driven Stage simulation testing on Mac, use the scripted `macSimRun.m` harness shipped with Symphony — see the [macOS Scripted Workflow](https://github.com/mikemanookin/symphony3_testbed/blob/master/Install.md#macos--scripted-symphonystage-workflow) section of Symphony's Install guide. The Stage side of that pipeline is what's documented here; the Symphony side is what differs from Windows / Linux.
+
 ## Contents
 
 - [Prerequisites (all OSs)](#prerequisites-all-oss)
@@ -407,7 +409,9 @@ Until 2026-04-23 the MOGL macOS branch passed `-I/usr/include` (the Intel-era Ho
 
 ### `ld: warning: ignoring file '…libglfw.dylib': found architecture 'x86_64', required architecture 'arm64'`
 
-You have Intel Homebrew at `/usr/local/lib/` but MATLAB on Apple Silicon (M1/M2/M3/M4) from R2023b onward is ARM-native and requires ARM-built libraries. Install ARM-native Homebrew side-by-side:
+This is the **GLFW-specific instance of a general Apple-Silicon rule**: every native library MATLAB loads (directly via mex/dylib, or transitively through .NET P/Invoke) must be `arm64` to match an ARM-native MATLAB. If you have both `/opt/homebrew` (ARM) and `/usr/local` (Intel) Homebrews installed, install MATLAB-bound libraries through the ARM one. The same rule applies to HDF5 if you also use Symphony — see Symphony's [Install.md "Apple Silicon: Homebrew architecture"](https://github.com/mikemanookin/symphony3_testbed/blob/master/Install.md#apple-silicon-homebrew-architecture) for the cross-cutting version of this guidance.
+
+The specific case here: you have Intel Homebrew at `/usr/local/lib/` but MATLAB on Apple Silicon (M1/M2/M3/M4) from R2023b onward is ARM-native and requires ARM-built libraries. Install ARM-native Homebrew side-by-side:
 
 ```bash
 # 1. Install ARM Homebrew (auto-installs to /opt/homebrew on Apple Silicon)

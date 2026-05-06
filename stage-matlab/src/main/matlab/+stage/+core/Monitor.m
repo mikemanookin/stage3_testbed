@@ -58,6 +58,27 @@ classdef Monitor < handle
             r = mode.refreshRate;
         end
 
+        function setRefreshRate(obj, rate)
+            % Pins the refresh rate returned by obj.refreshRate to the
+            % given Hz value. Bypasses the empirical measurement path —
+            % use when the caller already has a calibrated rate (e.g.
+            % Symphony's DAQ-clock measurement, or a deterministic
+            % replay scenario where you want the same nominal rate
+            % every run). Same closure-swap mechanism the empirical
+            % measurement uses; subsequent obj.refreshRate reads return
+            % the supplied value.
+            %
+            % See spec/specs/MONITOR_TIMING.md § precedence and the
+            % StageServer 'refreshRate' kwarg / 'setMonitorRefreshRate'
+            % wire event for the public surfaces.
+            if ~isnumeric(rate) || ~isscalar(rate) || ~isfinite(rate) || rate <= 0
+                error('stage:Monitor:invalidRefreshRate', ...
+                    'rate must be a positive finite numeric scalar; got %s.', mat2str(rate));
+            end
+            r = double(rate);
+            obj.getRefreshRateFcn = @(~) r;
+        end
+
         function r = measureRefreshRate(obj, window, nFrames)
             % Empirically measures the true refresh rate by driving
             % `nFrames` buffer swaps against vsync and computing the

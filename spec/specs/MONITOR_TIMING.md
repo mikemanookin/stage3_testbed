@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** Stage core
-**Related:** [PLAYER_LIFECYCLE.md](PLAYER_LIFECYCLE.md), [TASK-002](../TASKS.md#task-002)
+**Related:** [PLAYER_LIFECYCLE.md](PLAYER_LIFECYCLE.md), [TASK-002](../TASKS.md#task-002), [TASK-007](../TASKS.md#task-007)
 
 ---
 
@@ -58,6 +58,36 @@ The floor operation biases low. Downstream code uses the rate in three places:
 - The result is cached on the Monitor for the server's lifetime.
 
 Headless callers that skip `StageServer.start()` can call `measureRefreshRate` directly against any visible Window.
+
+## Caller-supplied override (TASK-007)
+
+The empirical measurement is the right default, but two surfaces let the caller pin a known rate instead — useful when (a) Symphony has a more accurate DAQ-clock-derived value than vsync sampling can produce, (b) a VRR / compositor-capped configuration prevents reliable measurement, or (c) deterministic replay / unit tests want a fixed rate without an actual display:
+
+| Surface | Where | When it fires |
+|---|---|---|
+| `StageServer.start(..., 'refreshRate', rate)` | Server start kwarg | Replaces the empirical measurement at startup. |
+| Wire event `setMonitorRefreshRate(rate)` | Any time outside a play | Pins the rate from a connected client. |
+| `StageClient.setMonitorRefreshRate(rate)` | Symphony-side companion | Wraps the wire event. |
+| `Monitor.setRefreshRate(rate)` | In-process API | What the kwarg + wire event both call internally. |
+
+### Precedence
+
+When more than one source supplies a rate, the most recent caller-supplied value wins:
+
+1. **Wire event mid-session** — last `setMonitorRefreshRate` call replaces any prior value.
+2. **`StageServer.start` kwarg** — pins the rate at startup; no empirical measurement runs.
+3. **Empirical measurement** — default if neither override fires.
+4. **GLFW integer fallback** — if measurement throws.
+
+Higher rows shadow lower rows. Once an override is in effect, `Monitor.refreshRate` returns the supplied value until either another override or `measureRefreshRate` is called again.
+
+### Validation
+
+All three caller-supplied paths share the same input check: positive, finite, scalar numeric. Bad values fail synchronously before any window state changes.
+
+### Relationship to `Player.exportFrames`
+
+`Player.exportFrames(canvas, filename, frameRate)` (and the older `Player.exportMovie`) takes its own `frameRate` argument that's used directly in `state.time = frame / frameRate` — those export paths are separate from the live Monitor and don't read or write `Monitor.getRefreshRateFcn`. Use the export path for offline regeneration; use the override surfaces above for live playback.
 
 ## Invariants
 

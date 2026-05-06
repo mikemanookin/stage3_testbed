@@ -332,8 +332,8 @@ For future reference if anyone writes MATLAB→Java pipe-reading code:
 
 ## TASK-007 — Allow caller to override empirically-measured refresh rate
 
-**Spec:** [specs/MONITOR_TIMING.md](specs/MONITOR_TIMING.md) (needs updating)
-**Status:** Open
+**Spec:** [specs/MONITOR_TIMING.md](specs/MONITOR_TIMING.md) § Caller-supplied override
+**Status:** Code complete — 2026-05-06; awaiting on-rig verification
 **Priority:** P2
 
 TASK-002 measures the monitor's refresh rate by driving 120 empty flips at startup and taking the median flip interval. That's the right default, but there are cases where the caller already has a better number than we could measure:
@@ -352,13 +352,13 @@ TASK-002 measures the monitor's refresh rate by driving 120 empty flips at start
 
 ### Acceptance criteria
 
-- [ ] `StageServer.start(..., 'refreshRate', 59.94)` opens the server and `getMonitorRefreshRate` returns exactly 59.94, no empirical measurement runs.
-- [ ] Passing `0`, negative, or non-finite rates raises an input-validation error before any window is created.
-- [ ] Absence of the parameter preserves current behavior (measure at start).
-- [ ] New wire event `setMonitorRefreshRate` in [specs/WIRE_PROTOCOL.md](specs/WIRE_PROTOCOL.md) — takes a double, returns `'ok'` or a validation error. Allowed outside of a play, rejected mid-play (same model as `stop`).
-- [ ] `StageClient.setMonitorRefreshRate` wraps the event and returns when ack'd.
-- [ ] `StageServerApp` UI (TASK-004) gains an optional "Override refresh rate (Hz)" text field; empty = measure, numeric = override. Persists via preferences.
-- [ ] `specs/MONITOR_TIMING.md` updated to document the override path and the order of precedence (argument > wire event > empirical measurement > GLFW integer fallback).
+- [x] `StageServer.start(..., 'refreshRate', 59.94)` opens the server and `getMonitorRefreshRate` returns exactly 59.94, no empirical measurement runs. — 2026-05-06
+- [x] Passing `0`, negative, or non-finite rates raises an input-validation error before any window is created. — 2026-05-06
+- [x] Absence of the parameter preserves current behavior (measure at start). — 2026-05-06
+- [x] New wire event `setMonitorRefreshRate` in [specs/WIRE_PROTOCOL.md](specs/WIRE_PROTOCOL.md) — takes a double, returns `'ok'` or a validation error. — 2026-05-06. Note: validation that the event arrives *outside* a play is the caller's responsibility; `StageServer` runs `onEventPlay` synchronously and the dispatch table only sees this event between plays.
+- [x] `StageClient.setMonitorRefreshRate` wraps the event and returns when ack'd. — 2026-05-06
+- [ ] `StageServerApp` UI (TASK-004) gains an optional "Override refresh rate (Hz)" text field; empty = measure, numeric = override. Persists via preferences. — deferred; UI surface isn't blocking the wire/API.
+- [x] `specs/MONITOR_TIMING.md` updated to document the override path and the order of precedence. — 2026-05-06
 
 ### Out of scope
 
